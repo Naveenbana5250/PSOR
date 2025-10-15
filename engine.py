@@ -1,39 +1,70 @@
 import yaml
 import subprocess
 import sys
+import logging
+from datetime import datetime
+
+def setup_logging():
+    logging.basicConfig(
+        filename='audit.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+def load_policies():
+    try:
+        with open('policies.yml', 'r') as file:
+            return yaml.safe_load(file)
+    except FileNotFoundError:
+        return {}
 
 def main():
-    """
-    The main function for the orchestration engine.
-    """
-    print("Engine starting...")
+    setup_logging()
+    policies = load_policies()
+    denied_ips = policies.get('safety_policies', {}).get('denied_ips', [])
+    logging.info("Engine starting...")
 
-    # Load the playbook
     try:
         with open('playbook.yml', 'r') as file:
             playbook = yaml.safe_load(file)
     except (FileNotFoundError, yaml.YAMLError) as e:
+        logging.error(f"Error loading playbook: {e}")
         print(f"Error loading playbook: {e}")
-        return # Exit if playbook fails to load
+        return
 
-    print(f"Successfully loaded playbook: '{playbook.get('name')}'")
+    playbook_name = playbook.get('name', 'Unnamed Playbook')
+    logging.info(f"Successfully loaded playbook: '{playbook_name}'")
+    print(f"Successfully loaded playbook: '{playbook_name}'")
 
-    # Execute steps from the playbook
     for step in playbook.get('steps', []):
+        step_name = step.get('name', 'Unnamed Step')
         action = step.get('action')
         parameters = step.get('parameters', {})
-        print(f"\n▶️  Executing step: '{step.get('name')}'")
+        logging.info(f"Executing step: '{step_name}'")
+        print(f"\nExecuting step: '{step_name}'")
 
         if action == 'block_ip':
             ip = parameters.get('ip_address')
-            if ip:
-                # Construct the command to run the plugin script
-                command = [sys.executable, "plugins/block_ip.py", ip]
-                subprocess.run(command)
+            if not ip:
+                logging.error("'ip_address' not specified for block_ip action.")
+                print("ERROR: 'ip_address' not specified for block_ip action.")
+                continue
+
+            if ip in denied_ips:
+                logging.warning(f"SAFETY VIOLATION: Action 'block_ip' on '{ip}' denied by policy.")
+                print(f"SAFETY VIOLATION: Action on '{ip}' denied by policy.")
+                continue
+
+            command = ["python3", "plugins/block_ip.py", ip]
+            result = subprocess.run(command)
+            if result.returncode == 0:
+                logging.info(f"Step '{step_name}' completed successfully.")
             else:
-                print("❌ Error: 'ip_address' not specified in parameters for block_ip action.")
+                logging.error(f"Step '{step_name}' failed with return code {result.returncode}.")
         else:
-            print(f"⚠️  Warning: Action '{action}' is not supported.")
+            logging.warning(f"Action '{action}' is not supported.")
+            print(f"WARNING: Action '{action}' is not supported.")
 
 if __name__ == "__main__":
     main()
