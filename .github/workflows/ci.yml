@@ -1,0 +1,21 @@
+name: PSOR CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make test script executable
+        run: chmod +x ./run_tests.sh
+
+      - name: Run the automated test suite
+        run: ./run_tests.sh
